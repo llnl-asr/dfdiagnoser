@@ -61,6 +61,112 @@ class Diagnoser:
             raise ValueError(f"Bundle directory {path} does not contain facts.jsonl")
         return DiagnosisResult(findings=self._replay_facts(facts_path))
 
+    def diagnose_checkpoint(self, checkpoint_dir: str, metric_boundaries: dict = {}):
+        """Offline diagnosis from a DFAnalyzer checkpoint dir (the intermediate
+        ``_flat_view_*.parquet`` / ``_raw_stats_*.json`` views) instead of a facts
+        bundle. The checkpoint has no facts, so we derive them rule-free with the
+        analyzer's metric builder (slope facts over ``*_ops_slope`` columns) and
+        replay through the same pipeline as the bundle/streaming paths."""
+        import glob
+        import pandas as pd
+
+        if not os.path.exists(checkpoint_dir):
+            raise FileNotFoundError(f"Checkpoint directory {checkpoint_dir} does not exist")
+        if not os.path.isdir(checkpoint_dir):
+            raise NotADirectoryError(f"Checkpoint path {checkpoint_dir} is not a directory")
+
+        flat_view_paths = sorted(glob.glob(os.path.join(checkpoint_dir, "_flat_view_*.parquet")))
+        if not flat_view_paths:
+            raise ValueError(
+                f"Checkpoint directory {checkpoint_dir} contains no _flat_view_*.parquet "
+                "views. Run dfanalyzer with analyzer.checkpoint=True first."
+            )
+
+        flat_views = {
+            self._checkpoint_view_key(p): pd.read_parquet(p) for p in flat_view_paths
+        }
+        raw_stats = self._load_checkpoint_raw_stats(checkpoint_dir)
+        envelope = self._build_checkpoint_fact_envelope(flat_views, raw_stats)
+        return DiagnosisResult(
+            findings=self._replay_fact_envelopes([envelope], source=checkpoint_dir)
+        )
+
+    @staticmethod
+    def _checkpoint_view_key(path: str):
+        """``_flat_view_time_range_1.parquet`` -> ``("time_range",)``: strip the
+        prefix, ``.parquet``, and the trailing ``_<time_granularity>``."""
+        import re
+
+        name = os.path.basename(path)
+        name = name[len("_flat_view_"):] if name.startswith("_flat_view_") else name
+        name = name[: -len(".parquet")] if name.endswith(".parquet") else name
+        name = re.sub(r"_\d+$", "", name)
+        return (name,)
+
+    @staticmethod
+    def _load_checkpoint_raw_stats(checkpoint_dir: str) -> dict:
+        """Load ``_raw_stats_*.json``; return {} if absent."""
+        import glob
+
+        for p in sorted(glob.glob(os.path.join(checkpoint_dir, "_raw_stats_*.json"))):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (OSError, ValueError):
+                continue
+        return {}
+
+    def _build_checkpoint_fact_envelope(self, flat_views, raw_stats) -> dict:
+        """Derive facts from the flat views with the analyzer's metric builder and
+        package them as an ``analyzer.fact-envelope.v1`` dict. Import is lazy so the
+        bundle/streaming paths stay free of the analyzer dependency."""
+        try:
+            from dftracer.analyzer.fact_engine import MetricFactBuilder
+            from dftracer.analyzer.types import FactEnvelope, FactEnvelopeContext
+        except ImportError as exc:
+            raise ImportError(
+                "diagnose_checkpoint derives facts from checkpoint flat views and "
+                "needs the analyzer's metric fact builder. Install DFAnalyzer "
+                "(pip install dftracer-analyzer) or diagnose an output=file fact "
+                "bundle with diagnose_file instead."
+            ) from exc
+
+        layers = self._layers_from_flat_views(flat_views)
+        builder = MetricFactBuilder(layers=layers, default_emit_mode="aggregate")
+        facts_by_view = builder.evaluate(flat_views=flat_views, raw_stats=raw_stats)
+
+        facts = []
+        for view_facts in facts_by_view.values():
+            for fact in view_facts:
+                fact.finalize_id()
+                facts.append(fact)
+
+        context = FactEnvelopeContext(
+            layers=layers,
+            view_types=[view_key[-1] for view_key in flat_views],
+            time_granularity=raw_stats.get("time_granularity") if isinstance(raw_stats, dict) else None,
+            time_resolution=raw_stats.get("time_resolution") if isinstance(raw_stats, dict) else None,
+            total_event_count=raw_stats.get("total_event_count") if isinstance(raw_stats, dict) else None,
+        )
+        logger.info(
+            "diagnoser.checkpoint.facts_built",
+            fact_count=len(facts),
+            layers=layers,
+            views=[view_key[-1] for view_key in flat_views],
+        )
+        return FactEnvelope(context=context, facts=facts).to_dict()
+
+    @staticmethod
+    def _layers_from_flat_views(flat_views) -> list:
+        """Discover the layer set from the ``<layer>_ops_slope`` columns."""
+        suffix = "_ops_slope"
+        layers = set()
+        for df in flat_views.values():
+            for col in df.columns:
+                if col.endswith(suffix):
+                    layers.add(col[: -len(suffix)])
+        return sorted(layers)
+
     def diagnose_facts(self, facts_path: str, output_handler=None) -> DiagnosisResult:
         """Offline replay of saved analyzer fact envelopes -> findings, with no
         Mofka/streaming dependency. ``facts_path`` may be a ``.jsonl`` file (one
@@ -79,12 +185,22 @@ class Diagnoser:
         current_window is aligned to each fact's window coordinate on ingest
         (record_fact), so a single envelope spanning many windows/epochs still
         accumulates persistence and matches the online path (online/offline parity)."""
+        return self._replay_fact_envelopes(
+            self._read_fact_envelopes(facts_path), source=facts_path,
+        )
+
+    def _replay_fact_envelopes(self, envelopes, source: str = "<memory>"):
+        """Ingest an iterable of fact-envelope dicts through the longitudinal
+        pipeline and build findings. Transport-agnostic core shared by the file
+        bundle replay (``_replay_facts``) and the in-memory checkpoint path
+        (``diagnose_checkpoint``), so all offline sources produce identical
+        findings."""
         with console_block("Replay fact envelopes"):
             window_count = 0
-            for envelope in self._read_fact_envelopes(facts_path):
+            for envelope in envelopes:
                 self._ingest_fact_envelope(envelope)
                 window_count += 1
-        logger.info("diagnoser.facts.replayed", windows=window_count, path=facts_path)
+        logger.info("diagnoser.facts.replayed", windows=window_count, path=source)
 
         findings = self._build_longitudinal_summary()
         for finding in findings:

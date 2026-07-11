@@ -8,11 +8,11 @@ from typing import List, Union
 
 from .config import init_hydra_config_store
 from .diagnoser import Diagnoser
-from .input import FileInput, MofkaInput, ZMQInput
+from .input import CheckpointInput, FileInput, MofkaInput, ZMQInput
 from .output import ConsoleOutput, FileOutput
 from .utils.log_utils import configure_logging, log_block
 
-InputType = Union[FileInput, MofkaInput, ZMQInput]
+InputType = Union[FileInput, CheckpointInput, MofkaInput, ZMQInput]
 OutputType = Union[ConsoleOutput, FileOutput]
 
 
@@ -34,6 +34,19 @@ class DFDiagnoserInstance:
             metric_boundaries = {}
         return self.diagnoser.diagnose_file(
             path=path,
+            metric_boundaries=metric_boundaries,
+        )
+
+    def diagnose_checkpoint(self, checkpoint_dir: str = None):
+        """Diagnose a DFAnalyzer checkpoint dir using the configured diagnoser."""
+        if checkpoint_dir is None:
+            checkpoint_dir = self.input.checkpoint_dir
+        if 'metric_boundaries' in self.hydra_config:
+            metric_boundaries = OmegaConf.to_object(self.hydra_config.metric_boundaries)
+        else:
+            metric_boundaries = {}
+        return self.diagnoser.diagnose_checkpoint(
+            checkpoint_dir=checkpoint_dir,
             metric_boundaries=metric_boundaries,
         )
 
@@ -121,6 +134,7 @@ __all__ = [
     "InputType",
     "OutputType",
     "FileInput",
+    "CheckpointInput",
     "MofkaInput",
     "ZMQInput",
     "ConsoleOutput",
