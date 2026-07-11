@@ -12,6 +12,14 @@ class FileInput:
 
 
 @dc.dataclass
+class CheckpointInput:
+    """Offline diagnosis from a DFAnalyzer checkpoint dir (intermediate
+    ``_flat_view_*.parquet`` / ``_raw_stats_*.json`` views). Facts are derived from
+    the flat views; no facts.jsonl bundle is required."""
+    checkpoint_dir: str
+
+
+@dc.dataclass
 class MofkaInput:
     group_file: str
     topic_name: str
