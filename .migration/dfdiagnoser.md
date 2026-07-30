@@ -63,3 +63,4 @@ Selected: 2026-07-30. Source: git@github.com:llnl/dfdiagnoser.git (default branc
   switches needed, committed on gitlab-migration and pushed main +
   gitlab-migration to czgitlab. Awaiting pipeline + user merge.
 - 2026-07-30: pyproject dftracer-analyzer dep (checkpoint extra + dev group) flipped in place to git+ssh czgitlab dfanalyzer@develop; CI test job now installs the checkpoint extra instead of PyPI dftracer-analyzer; REVERT.md updated (in-place must-fix).
+- 2026-07-30: CI switched to corona flux-allocation flow, single allocation per pipeline; MR opened.

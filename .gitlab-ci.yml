@@ -1,58 +1,70 @@
 # GitLab CI for dfdiagnoser on LLNL czgitlab (converted from .github/workflows/ci.yml).
-# Runs on the LC corona batch runners via modules + venv instead of GitHub-hosted
-# ubuntu runners with setup-uv.
+# Runs on the LC corona shell runner, with the work executed inside a single
+# Flux allocation, via modules + venv instead of GitHub-hosted ubuntu runners
+# with setup-uv.
 
 stages: [test, deploy]
 
-# LC corona batch runner (1 node) — mirrors the dftracer .corona-batch convention.
-.corona-batch:
+# LC corona CI via an explicit Flux allocation:
+# the job runs on the shell runner, creates ONE 1-node allocation with
+# `flux batch`, grabs its id with `flux job last`, and then runs EACH CI step
+# inside that same allocation through `flux proxy <jobid>`. The allocation is
+# cancelled in after_script, so the whole pipeline uses a single allocation.
+.corona-flux:
   id_tokens:
     SITE_ID_TOKEN:
       aud: https://lc.llnl.gov/gitlab
-  tags: [batch, corona]
+  tags: [shell, corona]
   variables:
     PYTHON_MODULE: python/3.13.2
-    GCC_MODULE: gcc/11.2.1
+    COMPILER_MODULE: gcc/11.2.1
     SMALL_QUEUE: pdebug
     SMALL_QUEUE_WALLTIME: 60
-    SCHEDULER_PARAMETERS: "-N 1 -q $SMALL_QUEUE -t $SMALL_QUEUE_WALLTIME"
 
+# One allocation; tests + docs both run on it via flux proxy.
 build-and-test:
-  extends: .corona-batch
+  extends: .corona-flux
   stage: test
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-  before_script:
+  script:
+    # Create the allocation (a placeholder batch job that just sleeps).
+    - flux batch -N 1 -q "$SMALL_QUEUE" -t "${SMALL_QUEUE_WALLTIME}m" --job-name=dfdiagnoser-ci --wrap sleep inf
+    # Get the allocation's Flux job id and wait until it starts.
+    - JOBID=$(flux job last)
+    - echo "Using Flux allocation $JOBID"
+    - flux job wait-event -t 300 "$JOBID" start
     # NOTE(gitlab-migration): the GitHub matrix (ubuntu-22.04 x python 3.9-3.12,
     # installed via astral-sh/setup-uv) is collapsed to the single LC module
-    # toolchain below; uv is replaced by a plain venv + pip.
-    - module load $PYTHON_MODULE
-    - python3 -m venv .venv && source .venv/bin/activate
+    # toolchain; uv is replaced by a plain venv + pip.
     # uv sync --all-extras --dev  ->  pip equivalents (mofka extra requires
     # spack-built mochi-mofka and is exercised only where available; its tests
     # skip when the transport is missing).
-    - pip install -e ".[streaming,checkpoint]" pytest
-  script:
+    - flux proxy "$JOBID" bash -lc "module load $PYTHON_MODULE && python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[streaming,checkpoint]' pytest"
     # Mirrors the GitHub "Determine test type" step: full suite on release tags,
     # smoke subset otherwise.
     - |
       if [ -n "$CI_COMMIT_TAG" ]; then TEST_TYPE=full; else TEST_TYPE=smoke; fi
-      pytest -v -m $TEST_TYPE tests/
-    - dfdiagnoser input=file input.path=$CI_PROJECT_DIR/tests/data/facts_bundle output=file output.output_format=json
+      flux proxy "$JOBID" bash -lc "source .venv/bin/activate && pytest -v -m $TEST_TYPE tests/"
+    - flux proxy "$JOBID" bash -lc "source .venv/bin/activate && dfdiagnoser input=file input.path=$CI_PROJECT_DIR/tests/data/facts_bundle output=file output.output_format=json"
+    # Docs build (published by the pages job below from this artifact).
+    - flux proxy "$JOBID" bash -lc "module load $PYTHON_MODULE && python3 -m venv .venv-docs && source .venv-docs/bin/activate && pip install -r docs/requirements.txt && pip install -e . && sphinx-build -b html docs public"
+  after_script:
+    # Release the allocation even if a step failed.
+    - JOBID=$(flux job last) && flux cancel "$JOBID" || true
+  artifacts:
+    paths: [public]
 
+# Publishes the artifact from build-and-test — shell runner, no allocation.
 pages:
-  extends: .corona-batch
+  extends: .corona-flux
   stage: deploy
+  needs: [build-and-test]
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_COMMIT_BRANCH == "gitlab-migration"'  # temporary: remove after merge to main
-  before_script:
-    - module load $PYTHON_MODULE
-    - python3 -m venv .venv-docs && source .venv-docs/bin/activate
   script:
-    - pip install -r docs/requirements.txt
-    - pip install -e .
-    - sphinx-build -b html docs public
+    - echo "Publishing docs built by build-and-test"
   artifacts:
     paths: [public]
