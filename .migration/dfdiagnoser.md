@@ -52,8 +52,8 @@ Selected: 2026-07-30. Source: git@github.com:llnl/dfdiagnoser.git (default branc
 - Branch `gitlab-migration` from main @ 6a1be773a938b1d91f059b681f4914cab690f6f7,
   adding only: `.gitlab-ci.yml`, `docs/` (5 new files),
   `.migration/REVERT.md`, `.migration/dfdiagnoser.md`
-- Commit SHA(s): recorded in status log below
-- Pushed to gitlab: `main`, tags (if any), `gitlab-migration`
+- Migration commit: 1cd534a00aaccda920185b65a3057699a91b8543
+- Pushed to gitlab: `main`, `gitlab-migration` (no tags existed); commit 1cd534a00aaccda920185b65a3057699a91b8543
 - `.github/` untouched; nothing pushed to origin; no in-place source edits
 
 ## Status log
@@ -62,3 +62,4 @@ Selected: 2026-07-30. Source: git@github.com:llnl/dfdiagnoser.git (default branc
 - 2026-07-30: CI converted, docs authored, local tests green, no dep URL
   switches needed, committed on gitlab-migration and pushed main +
   gitlab-migration to czgitlab. Awaiting pipeline + user merge.
+- 2026-07-30: pyproject dftracer-analyzer dep (checkpoint extra + dev group) flipped in place to git+ssh czgitlab dfanalyzer@develop; CI test job now installs the checkpoint extra instead of PyPI dftracer-analyzer; REVERT.md updated (in-place must-fix).

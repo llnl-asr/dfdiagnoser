@@ -32,7 +32,7 @@ build-and-test:
     # uv sync --all-extras --dev  ->  pip equivalents (mofka extra requires
     # spack-built mochi-mofka and is exercised only where available; its tests
     # skip when the transport is missing).
-    - pip install -e ".[streaming]" pytest dftracer-analyzer
+    - pip install -e ".[streaming,checkpoint]" pytest
   script:
     # Mirrors the GitHub "Determine test type" step: full suite on release tags,
     # smoke subset otherwise.
