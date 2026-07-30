@@ -1,0 +1,58 @@
+# GitLab CI for dfdiagnoser on LLNL czgitlab (converted from .github/workflows/ci.yml).
+# Runs on the LC corona batch runners via modules + venv instead of GitHub-hosted
+# ubuntu runners with setup-uv.
+
+stages: [test, deploy]
+
+# LC corona batch runner (1 node) — mirrors the dftracer .corona-batch convention.
+.corona-batch:
+  id_tokens:
+    SITE_ID_TOKEN:
+      aud: https://lc.llnl.gov/gitlab
+  tags: [batch, corona]
+  variables:
+    PYTHON_MODULE: python/3.13.2
+    GCC_MODULE: gcc/11.2.1
+    SMALL_QUEUE: pdebug
+    SMALL_QUEUE_WALLTIME: 60
+    SCHEDULER_PARAMETERS: "-N 1 -q $SMALL_QUEUE -t $SMALL_QUEUE_WALLTIME"
+
+build-and-test:
+  extends: .corona-batch
+  stage: test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  before_script:
+    # NOTE(gitlab-migration): the GitHub matrix (ubuntu-22.04 x python 3.9-3.12,
+    # installed via astral-sh/setup-uv) is collapsed to the single LC module
+    # toolchain below; uv is replaced by a plain venv + pip.
+    - module load $PYTHON_MODULE
+    - python3 -m venv .venv && source .venv/bin/activate
+    # uv sync --all-extras --dev  ->  pip equivalents (mofka extra requires
+    # spack-built mochi-mofka and is exercised only where available; its tests
+    # skip when the transport is missing).
+    - pip install -e ".[streaming]" pytest dftracer-analyzer
+  script:
+    # Mirrors the GitHub "Determine test type" step: full suite on release tags,
+    # smoke subset otherwise.
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then TEST_TYPE=full; else TEST_TYPE=smoke; fi
+      pytest -v -m $TEST_TYPE tests/
+    - dfdiagnoser input=file input.path=$CI_PROJECT_DIR/tests/data/facts_bundle output=file output.output_format=json
+
+pages:
+  extends: .corona-batch
+  stage: deploy
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "gitlab-migration"'  # temporary: remove after merge to main
+  before_script:
+    - module load $PYTHON_MODULE
+    - python3 -m venv .venv-docs && source .venv-docs/bin/activate
+  script:
+    - pip install -r docs/requirements.txt
+    - pip install -e .
+    - sphinx-build -b html docs public
+  artifacts:
+    paths: [public]
