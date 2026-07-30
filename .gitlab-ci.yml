@@ -28,12 +28,14 @@ allocate:
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   script:
-    - flux batch -N 1 -q "$SMALL_QUEUE" -t "${SMALL_QUEUE_WALLTIME}m" --job-name=dfdiagnoser-ci --wrap sleep inf
+    # flux alloc --bg submits the allocation and BLOCKS until it is granted
+    # (no timeout — batch queues may take long), then returns leaving the
+    # instance running in the background.
+    - flux alloc --bg -N 1 -q "$SMALL_QUEUE" -t "${SMALL_QUEUE_WALLTIME}m" --job-name=dfdiagnoser-ci
     - JOBID=$(flux job last)
     - echo "$JOBID" > .flux-jobid
     - echo "Created Flux allocation $JOBID (shared by all CI jobs)"
-    # No timeout: batch queues may take long to schedule the allocation.
-    - flux job wait-event "$JOBID" start
+    - flux proxy "$JOBID" flux resource list
   artifacts:
     paths: [.flux-jobid]
 
