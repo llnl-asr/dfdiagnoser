@@ -66,3 +66,4 @@ Selected: 2026-07-30. Source: git@github.com:llnl/dfdiagnoser.git (default branc
 - 2026-07-30: CI switched to corona flux-allocation flow, single allocation per pipeline; MR opened.
 - 2026-07-30: Flux allocation made global via allocate/.flux-jobid artifact/release-allocation jobs; wait-event timeout removed.
 - 2026-07-30: allocate switched to flux alloc --bg (blocks until granted); branch rebased on gitlab/main before push.
+- 2026-07-30: CI now runs inside podman containers (python:3.11, ssh keys mounted for the czgitlab dfanalyzer dep) on the allocated node via flux run; TEST_TYPE passed in with flux run --env. Pattern validated on cpp-logger.

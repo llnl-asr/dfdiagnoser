@@ -49,21 +49,12 @@ build-and-test:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   script:
     - JOBID=$(cat .flux-jobid)
-    # NOTE(gitlab-migration): the GitHub matrix (ubuntu-22.04 x python 3.9-3.12,
-    # installed via astral-sh/setup-uv) is collapsed to the single LC module
-    # toolchain; uv is replaced by a plain venv + pip.
-    # uv sync --all-extras --dev  ->  pip equivalents (mofka extra requires
-    # spack-built mochi-mofka and is exercised only where available; its tests
-    # skip when the transport is missing).
-    - flux proxy "$JOBID" bash -lc "module load $PYTHON_MODULE && python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[streaming,checkpoint]' pytest"
-    # Mirrors the GitHub "Determine test type" step: full suite on release tags,
-    # smoke subset otherwise.
-    - |
-      if [ -n "$CI_COMMIT_TAG" ]; then TEST_TYPE=full; else TEST_TYPE=smoke; fi
-      flux proxy "$JOBID" bash -lc "source .venv/bin/activate && pytest -v -m $TEST_TYPE tests/"
-    - flux proxy "$JOBID" bash -lc "source .venv/bin/activate && dfdiagnoser input=file input.path=$CI_PROJECT_DIR/tests/data/facts_bundle output=file output.output_format=json"
-    # Docs build (published by the pages job below from this artifact).
-    - flux proxy "$JOBID" bash -lc "module load $PYTHON_MODULE && python3 -m venv .venv-docs && source .venv-docs/bin/activate && pip install -r docs/requirements.txt && pip install -e . && sphinx-build -b html docs public"
+    # Tag pipelines run the full suite, everything else the smoke subset.
+    - if [ -n "$CI_COMMIT_TAG" ]; then TEST_TYPE=full; else TEST_TYPE=smoke; fi
+    - echo "Running test suite: $TEST_TYPE"
+    # flux run -N 1 executes the script ON the allocated node; podman provides
+    # the python environment (mirrors the GitHub Actions CI).
+    - flux proxy "$JOBID" flux run -N 1 --env=TEST_TYPE="$TEST_TYPE" bash .gitlab/ci/build-test-docs.sh
   artifacts:
     paths: [public]
 
@@ -83,7 +74,8 @@ pages:
 release-allocation:
   extends: .corona-flux
   stage: cleanup
-  needs: [allocate, build-and-test]
+  # Runs last: alloc → build-and-test → pages → deallocate.
+  needs: [allocate, build-and-test, {job: pages, optional: true}]
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push"'
       when: always
