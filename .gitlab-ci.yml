@@ -31,8 +31,12 @@ allocate:
     # flux alloc --bg submits the allocation and BLOCKS until it is granted
     # (no timeout — batch queues may take long), then returns leaving the
     # instance running in the background.
-    - flux alloc --bg -N 1 -q "$SMALL_QUEUE" -t "${SMALL_QUEUE_WALLTIME}m" --job-name=dfdiagnoser-ci
-    - JOBID=$(flux job last)
+    # Unique per-job name: `flux job last` is user-global and races with
+    # other pipelines running under the same LC account.
+    - ALLOC_NAME=dfdiagnoser-ci-$CI_PIPELINE_ID-$CI_JOB_ID
+    - flux alloc --bg -N 1 -q "$SMALL_QUEUE" -t "${SMALL_QUEUE_WALLTIME}m" --job-name="$ALLOC_NAME"
+    - JOBID=$(flux jobs -n --name="$ALLOC_NAME" -o "{id}" | head -1)
+    - test -n "$JOBID"
     - echo "$JOBID" > .flux-jobid
     - echo "Created Flux allocation $JOBID (shared by all CI jobs)"
     - flux proxy "$JOBID" flux resource list
@@ -82,4 +86,4 @@ release-allocation:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: always
   script:
-    - flux cancel "$(cat .flux-jobid)" || true
+    - test -s .flux-jobid && flux cancel "$(cat .flux-jobid)" || true
