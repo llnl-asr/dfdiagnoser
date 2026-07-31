@@ -55,7 +55,7 @@ build-and-test:
     - JOBID=$(cat .flux-jobid)
     # Tag pipelines run the full suite, everything else the smoke subset.
     - if [ -n "$CI_COMMIT_TAG" ]; then TEST_TYPE=full; else TEST_TYPE=smoke; fi
-    - echo "Running test suite: $TEST_TYPE"
+    - 'echo "Running test suite: $TEST_TYPE"'
     # flux run -N 1 executes the script ON the allocated node; podman provides
     # the python environment (mirrors the GitHub Actions CI).
     - flux proxy "$JOBID" flux run -N 1 --env=TEST_TYPE="$TEST_TYPE" bash .gitlab/ci/build-test-docs.sh
