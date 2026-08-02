@@ -3,7 +3,7 @@
 # Flux allocation, via modules + venv instead of GitHub-hosted ubuntu runners
 # with setup-uv.
 
-stages: [alloc, test, deploy, cleanup]
+stages: [alloc, test, build, deploy, cleanup]
 
 # LC corona CI via a single shared Flux allocation:
 #  - `allocate` creates ONE 1-node allocation and saves its Flux job id to
@@ -18,14 +18,15 @@ stages: [alloc, test, deploy, cleanup]
   variables:
     PYTHON_MODULE: python/3.13.2
     COMPILER_MODULE: gcc/11.2.1
-    SMALL_QUEUE: pdebug
-    SMALL_QUEUE_WALLTIME: 60
+    # 2h is a ceiling, not a reservation.
+    LARGE_QUEUE: pbatch
+    LARGE_QUEUE_WALLTIME: 120
 
 allocate:
   extends: .corona-flux
   stage: alloc
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   script:
     # flux alloc --bg submits the allocation and BLOCKS until it is granted
@@ -34,7 +35,7 @@ allocate:
     # Unique per-job name: `flux job last` is user-global and races with
     # other pipelines running under the same LC account.
     - ALLOC_NAME=dfdiagnoser-ci-$CI_PIPELINE_ID-$CI_JOB_ID
-    - flux alloc --bg -N 1 -q "$SMALL_QUEUE" -t "${SMALL_QUEUE_WALLTIME}m" --job-name="$ALLOC_NAME"
+    - flux alloc --bg -N 1 -q "$LARGE_QUEUE" -t "${LARGE_QUEUE_WALLTIME}m" --job-name="$ALLOC_NAME"
     - JOBID=$(flux jobs -n --name="$ALLOC_NAME" -o "{id}" | head -1)
     - test -n "$JOBID"
     - echo "$JOBID" > .flux-jobid
@@ -49,7 +50,7 @@ build-and-test:
   stage: test
   needs: [allocate]
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   script:
     - JOBID=$(cat .flux-jobid)
@@ -63,25 +64,36 @@ build-and-test:
     paths: [public]
 
 # Publishes the artifact from build-and-test — shell runner, no allocation.
-pages:
+wheels:
+  extends: .corona-flux
+  stage: build
+  needs: [allocate]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+  script:
+    - JOBID=$(cat .flux-jobid)
+    - flux proxy "$JOBID" flux run -N 1 bash .gitlab/ci/wheels.sh
+  artifacts:
+    paths: [wheelhouse/]
+
+# Needs both producers, so a failed wheel or test run publishes nothing.
+distribute:
   extends: .corona-flux
   stage: deploy
-  needs: [build-and-test]
+  needs: [wheels, build-and-test]
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-    - if: '$CI_COMMIT_BRANCH == "gitlab-migration"'  # temporary: remove after merge to main
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
   script:
-    - echo "Publishing docs built by build-and-test"
-  artifacts:
-    paths: [public]
+    - bash .gitlab/ci/distribute.sh
 
 release-allocation:
   extends: .corona-flux
   stage: cleanup
-  # Runs last: alloc → build-and-test → pages → deallocate.
-  needs: [allocate, build-and-test, {job: pages, optional: true}]
+  # Runs last: alloc → build-and-test → wheels → deallocate.
+  needs: [allocate, build-and-test, {job: wheels, optional: true}]
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
       when: always
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: always
