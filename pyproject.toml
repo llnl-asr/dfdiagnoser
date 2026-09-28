@@ -24,7 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 streaming = ["pyzmq>=27.0.0", "streamz>=0.6.4", "streamz-zmq>=0.1.4"]
-checkpoint = ["dftracer-analyzer @ git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dfanalyzer.git@develop"]
+checkpoint = ["dftracer-analyzer @ git+https://github.com/llnl-asr/dfanalyzer.git@develop"]
 
 [project.scripts]
 dfdiagnoser = "dfdiagnoser.__main__:main"
@@ -34,7 +34,7 @@ dev = [
     "ipykernel>=6",
     "pytest>=8",
     "ruff>=0.12.0",
-    "dftracer-analyzer @ git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dfanalyzer.git@develop",
+    "dftracer-analyzer @ git+https://github.com/llnl-asr/dfanalyzer.git@develop",
 ]
 
 [tool.pytest.ini_options]
