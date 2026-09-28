@@ -1,9 +1,9 @@
 # DFDiagnoser
 
-DFDiagnoser turns [DFAnalyzer](https://github.com/LLNL/dfanalyzer)'s per-window
+DFDiagnoser turns [DFAnalyzer](https://github.com/llnl-asr/dfanalyzer)'s per-window
 **analysis facts** into **longitudinal diagnosis findings** — *is this bottleneck
 persistent, getting worse, where, and what class of fix does it call for* — that
-[DFOptimizer](https://github.com/LLNL/dfoptimizer) can act on. It runs the same way
+[DFOptimizer](https://github.com/llnl-asr/dfoptimizer) can act on. It runs the same way
 **offline** (replay a saved fact bundle) and **online** (consume a live stream over
 Mofka or ZMQ), producing identical findings.
 
@@ -40,7 +40,7 @@ pip install "dfdiagnoser[streaming]"    # + online transports (pyzmq / mofka)
 From source:
 
 ```bash
-git clone https://github.com/LLNL/dfdiagnoser.git && cd dfdiagnoser
+git clone https://github.com/llnl-asr/dfdiagnoser.git && cd dfdiagnoser
 uv sync && uv pip install -e .
 ```
 

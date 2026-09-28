@@ -2,11 +2,11 @@ Introduction
 ============
 
 DFDiagnoser consumes ``analyzer.fact-envelope.v1`` facts emitted by
-`DFAnalyzer <https://github.com/LLNL/dfanalyzer>`_ — one per analysis window per
+`DFAnalyzer <https://github.com/llnl-asr/dfanalyzer>`_ — one per analysis window per
 view — and summarizes each ``(fact_type, scope)`` along its temporal axis into
 **diagnosis findings** that answer: *is this bottleneck persistent, getting
 worse, where, and what class of fix does it call for?* The findings feed
-`DFOptimizer <https://github.com/LLNL/dfoptimizer>`_. It runs identically
+`DFOptimizer <https://github.com/llnl-asr/dfoptimizer>`_. It runs identically
 **offline** (replaying a saved fact bundle) and **online** (consuming a live
 stream over Mofka or ZMQ).
 
@@ -44,7 +44,7 @@ From source:
 
 .. code-block:: bash
 
-   git clone https://github.com/LLNL/dfdiagnoser.git && cd dfdiagnoser
+   git clone https://github.com/llnl-asr/dfdiagnoser.git && cd dfdiagnoser
    uv sync && uv pip install -e .
 
 Requirements: Python >= 3.9, and DFAnalyzer fact envelopes (run DFAnalyzer

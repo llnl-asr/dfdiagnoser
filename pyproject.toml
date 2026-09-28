@@ -24,7 +24,6 @@ dependencies = [
 
 [project.optional-dependencies]
 streaming = ["pyzmq>=27.0.0", "streamz>=0.6.4", "streamz-zmq>=0.1.4"]
-# NOTE(gitlab-migration): was dftracer-analyzer>=0.0.9 (PyPI) — restore when moving back to GitHub (see .migration/REVERT.md)
 checkpoint = ["dftracer-analyzer @ git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dfanalyzer.git@develop"]
 
 [project.scripts]
@@ -35,7 +34,6 @@ dev = [
     "ipykernel>=6",
     "pytest>=8",
     "ruff>=0.12.0",
-    # NOTE(gitlab-migration): was dftracer-analyzer>=0.0.9 (PyPI) — restore when moving back to GitHub (see .migration/REVERT.md)
     "dftracer-analyzer @ git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dfanalyzer.git@develop",
 ]
 
